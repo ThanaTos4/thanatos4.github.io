@@ -1,0 +1,265 @@
+layout:     post   				    # 使用的布局（不需要改）
+title:      BBDown 下载 B 站视频 - 快捷的命令行工具				# 标题 
+subtitle:   BBDown  #副标题
+date:       2025-11-10				# 时间
+author:     wuxia						# 作者
+header-img: img/post-bg-2015.jpg 	#这篇文章标题背景图片
+catalog: true 						# 是否归档
+tags:								
+
+#标签
+
+​	-生活
+
+# BBDown 下载 B 站视频 - 快捷的命令行工具
+
+> 若无单独说明，按照文章代码块中命令的顺序，一条一条执行，即可实现目标。
+> 适用系统：Debian 系发行版，包括 Ubuntu 和 Armbian，其他发行版按流程稍改命令一般也可。
+
+<mark>走通预计时间：10 分钟</mark>
+
+> I might have made some mistakes, please let me know if I’ve gotten anything wrong!
+
+BBDown 是一款命令行 B 站 下载器。
+
+GitHub： nilaoda/BBDown: Bilibili Downloader. 一款命令行式哔哩哔哩下载器. (github.com)
+
+下面是它结合网络记事本方便日常使用的演示。
+
+
+![](https://gitee.com/thanatos4/wuxia_imag/raw/master/img/9d32f15c8a4932b8afa72cec45c740dd.gif)
+
+安装与配置
+安装前置工具
+```
+sudo apt install -y wget unzip curl
+```
+安装 BBDown
+一键复制运行即可安装（更新的话重复运行一遍即可）
+```
+# 获取最新下载链接
+github_project="nilaoda/BBDown"
+tag=$(wget -qO- -t1 -T2 "https://api.github.com/repos/${github_project}/releases/latest" | grep "tag_name" | head -n 1 | awk -F ":" '{print $2}' | sed 's/\"//g;s/,//g;s/ //g')
+browser_download_url=$(wget -qO- -t1 -T2 "https://api.github.com/repos/${github_project}/releases/latest" | grep "browser_download_url" | head -n 1 | awk -F "_" '{print $5}' | sed 's/\"//g;s/,//g;s/ //g')
+# echo $browser_download_url
+# 下载
+wget https://github.com/nilaoda/BBDown/releases/download/$tag/BBDown_${tag}_${browser_download_url}_linux-x64.zip
+# 解压并整理
+unzip BBDown_*_linux-x64.zip && rm BBDown_*_linux-x64.zip
+chmod +x BBDown
+sudo mv BBDown /usr/local/bin/
+```
+创建数据文件（不提前创建的话，由于这个 .data 文件默认同程序一个目录，而程序所在目录普通用户没有写权限，导致登录的 session 不能保存）
+```
+sudo touch /usr/local/bin/BBDown.data && \
+sudo chown $USER:$USER /usr/local/bin/BBDown.data
+```
+安装依赖 ffmpeg
+```
+sudo apt update && sudo apt install -y ffmpeg
+```
+查看 ffmpeg 版本，确保安装成功
+
+```
+ffmpeg -version
+```
+配置
+
+> 更多配置请查看项目的 GitHub 页面
+
+```
+sudo vim /usr/local/bin/BBDown.config
+```
+```
+# 非空白内容程序逐行读取，对于一个选项，其参数应当在下一行出现
+
+# 设置输出文件名格式
+--file-pattern
+<videoTitle>
+
+--multi-file-pattern
+<videoTitle>/[P<pageNumberWithZero>]<pageTitle>
+
+# 下面设置下载多个分P时，每个分P的下载间隔为2秒
+--delay-per-page
+2
+
+# 开启弹幕下载功能
+--download-danmaku
+# 跳过字幕下载
+--skip-subtitle
+```
+也可以在配置文件中指定下载目录，将下面加入上面文件 BBDown.config 即可。
+```
+# 下载目录
+--work-dir
+/home/vfly2/bilibili
+```
+使用
+需要先登录（登陆才能下 1080p），有效期大概 1 个月。在命令行运行：
+
+```
+BBDown login   # 需要APP扫码
+```
+然后就可以下载视频了。
+
+视频链接可以是完整的网址 "https://www.bilibili.com/video/BV1Ee411u7hm" ，也可以是里面的这段 BV1Ee411u7hm 。命令如下：
+```
+# 下载单个视频
+BBDown BV1Ee411u7hm
+BBDown "https://www.bilibili.com/video/BV1Ee411u7hm"
+
+# 下载合集
+BBDown https://space.bilibili.com/88895225/channel/collectiondetail?sid=39377
+```
+
+> 更多使用，请查看项目的 GitHub 页面
+
+批量下载
+可能前面的内容还不容易看出，命令行工具相比有用户界面工具的优势，也就是快捷简便自动化。下面通过一个小脚本来发挥出它的优势。
+
+批量下载脚本
+先创建一个脚本文件：
+
+```
+filename="bbdl.sh"
+touch $filename && chmod +x $filename && vim $filename
+```
+编辑内容：
+
+```
+vim bbdl.sh
+```
+需要修改 BBLIST 变量的值，也就是待会保存视频网址的文件的绝对路径。
+```
+#!/bin/bash
+# download bilibili videos according to selected file containing urls 
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
+export PATH
+
+# 存有 视频网址 的文件路径，只需要修改这个
+BBLIST="/home/vfly2/bblist"
+
+
+# 取文件指定的第几行的内容，变量1是文件路径，变量2是第几行
+function grepline(){
+    url=$(cat ${1} | head -n ${2} | tail -n 1)
+    echo ${url}
+}
+
+
+LINE=1
+URL=$(grepline ${BBLIST} ${LINE})   # 先取第一行
+ENDLINE=$(cat ${BBLIST} | tail -n 1)   # 取最后一行
+
+
+# 每次取一行，直到行的内容是 ENDLINE
+until [ "${URL}" == "${ENDLINE}" ]
+do
+
+/usr/local/bin/BBDown ${URL}
+# /usr/local/bin/BBDown ${URL} --work-dir /home/vfly2/bilibili   # 可在这指定下载目录
+LINE=$((${LINE}+1))   # 加1
+URL=$(grepline ${BBLIST} ${LINE})   # 取下一行，如果是 ENDLINE，则退出循环
+
+done
+
+/usr/local/bin/BBDown ${ENDLINE}   # 补上最后一行网址的下载，如果就一个链接，会下两次
+```
+将视频链接保存在 bblist 中：
+
+
+```
+vim /home/vfly2/bblist
+```
+一行一个链接
+```
+BV1Ee411u7hm
+BV1p34y1G79Q
+```
+执行脚本（默认下载在当前目录下）
+
+```
+bash -ex  ./bbdl.sh
+```
+如此一来，只需要先在本地电脑上把所有链接保存，再在服务器或 NAS 上通过脚本一键全部下载，非常便捷。
+
+结合网络记事本
+命令行工具的不足在于使用上有一定门槛，以及不方便日常的零碎化使用。也就是如果每次只下载一两个视频，还需要 SSH 编辑文件并执行脚本，有些繁琐。
+
+本博客之前有一篇介绍网络记事本的文章：分享我使用两年的极简 网页记事本 - 承飞之咎 (vfly2.com)，它保存数据的方式就是一个文件。
+
+那不如通过网络记事本随时保存链接，再把脚本中的 BBLIST 变量改为相应文件，这样每隔一段时间自动执行脚本下载视频，就可以省去操作。（实际上 AhFei 是利用 curl 抓取内容到本地，而非在本机部署一个网络记事本）
+
+> 不过这样实时性没那么高，AhFei 是将下载目录改为 Emby 的媒体库，通过 Emby 观看。这样高质量视频直接就保存了，看完后删去不需要的，不用担心视频被和谐，也不需要单独抽空下载收藏的视频。
+
+类似上面的脚本流程：
+```
+filename="bbdl.sh"
+touch $filename && chmod +x $filename && vim $filename
+```
+```
+vim bbdl.sh
+```
+> 各位读者可以直接使用这个公开实例，或者自行搭建：分享我使用两年的极简 网页记事本 - 承飞之咎 (vfly2.com)
+
+```
+#!/bin/bash
+# download bilibili videos according to the file containing urls 
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
+export PATH
+
+# 存有 视频网址 的文件路径
+BBLIST="/home/vfly2/bblist"
+WEBLIST="https://forward.vfly.app/bblist"
+
+# 下载网页上的视频链接
+curl -k $WEBLIST > $BBLIST
+
+
+# 取文件指定的第几行的内容，变量1是文件路径，变量2是第几行
+function grepline(){
+    url=$(cat ${1} | head -n ${2} | tail -n 1)
+    echo ${url}
+}
+
+
+LINE=1
+URL=$(grepline ${BBLIST} ${LINE})   # 先取第一行
+ENDLINE=$(cat ${BBLIST} | tail -n 1)   # 取最后一行
+
+
+# 每次取一行，直到行的内容是 ENDLINE
+until [ "${URL}" == "${ENDLINE}" ]
+do
+
+# echo ${URL}
+/usr/local/bin/BBDown ${URL}
+# /usr/local/bin/BBDown ${URL} --work-dir /home/vfly2/bilibili   # 可在这指定下载目录
+LINE=$((${LINE}+1))   # 加1
+URL=$(grepline ${BBLIST} ${LINE})   # 取下一行，如果是 ENDLINE，则退出循环
+
+done
+
+/usr/local/bin/BBDown ${ENDLINE}   # 补上最后一行网址的下载，如果就一个链接，会下两次
+# 向网页记事本传送已完成的标志
+echo "\nabove have done, but may skip" >> $BBLIST
+curl -k --data-urlencode "text@${BBLIST}" $WEBLIST
+```
+这样每次 SSH 只需要运行一遍下面命令即可，不需要编辑文件复制链接了
+
+```
+bash -ex ./bbdl.sh
+```
+最后分享一下我是怎么看 B 站的。
+
+为了防止刷刷刷，我的手机里没有 B 站 APP，而是在电脑上通过网页看，每次只看动态里关注的 UP 。然而这样也有刷的风险，不过这时更多是会被首页等妨碍注意力。
+
+于是，我通过 RSSHub 生成个人动态的 RSS，通过 RSS 阅读器发现更新，然后直接跳转到视频页，再把链接保存到网络记事本上。每 4 小时自动下载，而后就可以在 Emby 上观看，尤其是在手机用 Emby 客户端看，避免了被商业平台各种广告和手段分散注意力，同时保持了摄入信息的独立性和主动性。（有这种习惯就会潜移默化培养意识，从而增强“免疫力”）
+
+过去用过的一款有用户界面的 B 站下载客户端： leiurayer/downkyi: 哔哩下载姬downkyi，哔哩哔哩网站视频下载工具，支持批量下载，支持8K、HDR、杜比视界，提供工具箱（音视频提取、去水印等）。 (github.com)
+
+可以登录账号从而下载收藏夹，但是视频多的话，很容易闪退。
+
